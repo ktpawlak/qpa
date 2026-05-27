@@ -24,10 +24,10 @@ unzip qcs8275-Monza_v1.zip && rm qcs8275-Monza_v1.zip
 
 ### Phase 1: flash CDT boot artifacts
 
-Physically unplug the board from power, then:
+Power cycle the board, then:
 
 ```bash
-sudo ~/qualcomm/carmel-tools/alpaca.py edl
+sudo ~/qualcomm/carmel-tools/alpaca.py off && sleep 2 && sudo ~/qualcomm/carmel-tools/alpaca.py edl
 sleep 3
 cd ~/qualcomm/monza2/QLI.1.7-Ver.1.3-ubuntu-QCS8300-nhlos-bins/cdt_monza
 sudo qdl --storage emmc prog_firehose_ddr.elf rawprogram1.xml patch1.xml
@@ -50,10 +50,10 @@ ln -sf $IMG/dtb.bin $NHLOS/
 cp $IMG/rawprogram0_emmc.xml $NHLOS/partition_emmc/
 ```
 
-Physically unplug the board from power again, then flash:
+Power cycle the board again, then flash:
 
 ```bash
-sudo ~/qualcomm/carmel-tools/alpaca.py edl
+sudo ~/qualcomm/carmel-tools/alpaca.py off && sleep 2 && sudo ~/qualcomm/carmel-tools/alpaca.py edl
 sleep 3
 cd ~/qualcomm/monza2/QLI.1.7-Ver.1.3-ubuntu-QCS8300-nhlos-bins
 sudo qdl --storage emmc --include=partition_emmc prog_firehose_ddr.elf partition_emmc/rawprogram*.xml partition_emmc/patch*.xml

@@ -21,10 +21,9 @@ sudo ~/qualcomm/carmel-tools/alpaca.py edl  # enter EDL (Emergency Download) mod
 
 The script uses an FTDI USB interface to control the board. It requires `sudo` for all operations.
 
-> **Note:** `alpaca.py edl` signals the board to enter EDL mode, but the board's USB flashing
-> port will only enumerate on the host (as `05c6:9008`) if the board was **physically unplugged
-> from power** before the command. A software power-off (`alpaca.py off`) is not sufficient.
-> To confirm the board is in EDL mode, check: `lsusb | grep 05c6:9008`
+> **Note:** `alpaca.py edl` signals the board to enter EDL mode, but must be preceded by
+> `alpaca.py off` to power-cycle the board first — otherwise the USB flashing port (`05c6:9008`)
+> will not enumerate. To confirm the board is in EDL mode, check: `lsusb | grep 05c6:9008`
 
 # Images
 
