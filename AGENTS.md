@@ -27,7 +27,7 @@ The script uses an FTDI USB interface to control the board. It requires `sudo` f
 
 # Images
 
-Images live in `~/qualcomm/images/`, organised by OS version then release tag:
+Ubuntu images live in `~/qualcomm/images/`, organised by OS version then release tag:
 
 ```
 ~/qualcomm/images/
@@ -39,8 +39,8 @@ Images live in `~/qualcomm/images/`, organised by OS version then release tag:
     ...
 ```
 
-NHLOS artifacts (bootloader, firehose, CDT) are kept in `~/qualcomm/monza2/` and only need
-to be downloaded once. They do not change between Ubuntu releases.
+NHLOS artifacts (bootloader, firehose, CDT) and image symlinks are stored inside this
+repository under `boards/<board>/` and are gitignored. See SKILLS.md for setup.
 
 # Skills
 
