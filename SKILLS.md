@@ -77,3 +77,22 @@ Power cycle to ensure a clean boot:
 sudo ~/qualcomm/carmel-tools/alpaca.py off
 sudo ~/qualcomm/carmel-tools/alpaca.py on
 ```
+
+### First login: change default password
+
+Ubuntu's default password (`ubuntu`) is expired on first boot and must be changed immediately. The `flash-monza2.sh` script handles this automatically, but if doing it manually:
+
+```bash
+# Wait for the board to be reachable (check with ping), then:
+ssh ubuntu@192.168.1.185
+# Password prompt: ubuntu
+# Current password: ubuntu
+# New password: changeme12
+# Retype new password: changeme12
+```
+
+After the password change the session is closed automatically — log in again with the new password:
+
+```bash
+ssh ubuntu@192.168.1.185   # password: changeme12
+```

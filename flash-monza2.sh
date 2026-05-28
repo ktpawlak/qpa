@@ -15,6 +15,11 @@ NHLOS=boards/monza2/nhlos
 EDL_USB_ID="05c6:9008"
 EDL_TIMEOUT=15  # seconds to wait for EDL device to enumerate
 
+BOARD_IP=192.168.1.185
+DEFAULT_PASS=ubuntu
+NEW_PASS=changeme12
+SSH_TIMEOUT=120  # seconds to wait for SSH after boot
+
 # --- helpers -----------------------------------------------------------------
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -48,6 +53,8 @@ IMG=$(realpath "$1")
 [ -d "$IMG" ]                       || die "Image directory not found: $IMG"
 [ -f "$ALPACA" ]                    || die "alpaca.py not found: $ALPACA"
 command -v qdl >/dev/null           || die "qdl not found in PATH"
+command -v expect >/dev/null        || die "expect not found in PATH (install with: apt install expect)"
+command -v sshpass >/dev/null       || die "sshpass not found in PATH (install with: apt install sshpass)"
 [ -f "$NHLOS/prog_firehose_ddr.elf" ] || die "NHLOS artifacts missing. Run one-time setup first (see SKILLS.md)."
 [ -d "$NHLOS/cdt_monza" ]           || die "CDT artifacts missing. Run one-time setup first (see SKILLS.md)."
 
@@ -100,6 +107,42 @@ echo "--- Power cycling for clean boot ---"
 sudo "$ALPACA" off
 sleep 2
 sudo "$ALPACA" on
+
+# --- wait for SSH and change default password --------------------------------
+
+echo ""
+echo "--- Waiting for SSH on ${BOARD_IP} (${SSH_TIMEOUT}s) ---"
+ssh_ready=0
+for i in $(seq 1 $SSH_TIMEOUT); do
+    if nc -z -w1 "$BOARD_IP" 22 2>/dev/null; then
+        ssh_ready=1
+        break
+    fi
+    sleep 1
+done
+[ "$ssh_ready" -eq 1 ] || die "SSH on ${BOARD_IP} did not become available after ${SSH_TIMEOUT}s."
+
+echo "SSH port open."
+
+# Try new password first (re-flash case: password already set)
+if sshpass -p "$NEW_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+        ubuntu@"$BOARD_IP" true 2>/dev/null; then
+    echo "Password already set to '${NEW_PASS}'. Skipping password change."
+else
+    echo "Changing default password..."
+    expect -c "
+        spawn ssh -o StrictHostKeyChecking=no ubuntu@${BOARD_IP}
+        expect \"password:\"
+        send \"${DEFAULT_PASS}\r\"
+        expect {
+            \"Current password:\" { send \"${DEFAULT_PASS}\r\"; exp_continue }
+            \"New password:\"     { send \"${NEW_PASS}\r\";     exp_continue }
+            \"Retype new\"        { send \"${NEW_PASS}\r\";     exp_continue }
+            eof                  {}
+        }
+    " || die "Failed to change password on ${BOARD_IP}."
+    echo "Password changed to '${NEW_PASS}'."
+fi
 
 echo ""
 echo "=== Flashing complete ==="
