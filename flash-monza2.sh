@@ -9,7 +9,8 @@
 
 set -euo pipefail
 
-ALPACA=~/qualcomm/carmel-tools/alpaca.py
+REAL_HOME=$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)
+ALPACA="${REAL_HOME}/qualcomm/carmel-tools/alpaca.py"
 NHLOS=boards/monza2/nhlos
 EDL_USB_ID="05c6:9008"
 EDL_TIMEOUT=15  # seconds to wait for EDL device to enumerate
