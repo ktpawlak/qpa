@@ -2,6 +2,77 @@
 
 All commands are run from the root of this repository (`qrap/`).
 
+## Flash Hamoa
+
+Flashing is a single-phase process (no CDT step). One EDL cycle flashes the full Ubuntu OS image.
+
+### One-time setup: download NHLOS artifacts
+
+Skip this if `boards/hamoa/nhlos/` already contains the artifacts.
+
+```bash
+wget -P /tmp https://artifacts.codelinaro.org/artifactory/qli-ci/flashable-binaries/ubuntu-fw/X1E80100/IQ-X.1.7-Ver.1.1/IQ-X.1.7-Ver.1.1-ubuntu-X1E80100-nhlos-bins.tar.gz
+tar xf /tmp/IQ-X.1.7-Ver.1.1-ubuntu-X1E80100-nhlos-bins.tar.gz \
+    --strip-components=1 -C boards/hamoa/nhlos/
+rm /tmp/IQ-X.1.7-Ver.1.1-ubuntu-X1E80100-nhlos-bins.tar.gz
+```
+
+### Flash (automated)
+
+```bash
+./flash-hamoa.sh ~/qualcomm/images/26.04/x02
+```
+
+The script copies the image and XML files, enters EDL, flashes, and power-cycles.
+The final `qdl: firehose operation timed out` is expected and not an error.
+
+### Manual steps
+
+#### Copy image and partition files
+
+Run this when changing to a new release (e.g. `x02`). Adjust the `IMG` path as needed.
+
+```bash
+IMG=~/qualcomm/images/26.04/x02   # adjust release tag as needed
+
+cp $IMG/ubuntu-*.img          boards/hamoa/nhlos/
+cp $IMG/rawprogram0.xml       boards/hamoa/nhlos/
+cp $IMG/rawprogram0_emmc.xml  boards/hamoa/nhlos/
+```
+
+#### Flash Ubuntu OS image
+
+```bash
+sudo ~/qualcomm/carmel-tools/alpaca.py off && sleep 2 && sudo ~/qualcomm/carmel-tools/alpaca.py edl
+sleep 3
+cd boards/hamoa/nhlos
+sudo qdl --storage ufs partition_ufs/xbl_s_devprg_ns.melf rawprogram0.xml
+cd -
+```
+
+Power cycle for a clean boot:
+
+```bash
+sudo ~/qualcomm/carmel-tools/alpaca.py off
+sudo ~/qualcomm/carmel-tools/alpaca.py on
+```
+
+#### First login: change default password
+
+```bash
+ssh ubuntu@192.168.1.123
+# Password prompt: ubuntu
+# Current password: ubuntu
+# New password: changeme12
+# Retype new password: changeme12
+```
+
+After the password change the session closes automatically — log in again:
+
+```bash
+ssh ubuntu@192.168.1.123   # password: changeme12
+```
+
 ## Flash Monza2
 
 Flashing is a two-phase process. Each phase requires the board to be in EDL mode.
