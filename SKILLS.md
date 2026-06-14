@@ -46,7 +46,7 @@ cp $IMG/rawprogram0_emmc.xml  boards/hamoa/nhlos/
 sudo ~/qualcomm/carmel-tools/alpaca.py off && sleep 2 && sudo ~/qualcomm/carmel-tools/alpaca.py edl
 sleep 3
 cd boards/hamoa/nhlos
-sudo qdl --storage ufs partition_ufs/xbl_s_devprg_ns.melf rawprogram0.xml
+sudo qdl --storage ufs xbl_s_devprg_ns.melf rawprogram0.xml
 cd -
 ```
 

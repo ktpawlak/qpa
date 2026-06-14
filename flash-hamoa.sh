@@ -19,7 +19,7 @@ EDL_TIMEOUT=15  # seconds to wait for EDL device to enumerate
 BOARD_IP=192.168.1.123
 DEFAULT_PASS=ubuntu
 NEW_PASS=changeme12
-SSH_TIMEOUT=120  # seconds to wait for SSH after boot
+SSH_TIMEOUT=300  # seconds to wait for SSH after boot
 
 # --- helpers -----------------------------------------------------------------
 
@@ -56,11 +56,17 @@ IMG=$(realpath "$1")
 command -v qdl >/dev/null           || die "qdl not found in PATH"
 command -v expect >/dev/null        || die "expect not found in PATH (install with: apt install expect)"
 command -v sshpass >/dev/null       || die "sshpass not found in PATH (install with: apt install sshpass)"
-[ -f "$NHLOS/partition_ufs/xbl_s_devprg_ns.melf" ] \
+[ -f "$NHLOS/xbl_s_devprg_ns.melf" ] \
     || die "NHLOS artifacts missing. Run one-time setup first (see SKILLS.md)."
 
 IMG_FILE=$(ls "$IMG"/ubuntu-*.img 2>/dev/null | head -1)
-[ -n "$IMG_FILE" ]                  || die "No ubuntu-*.img found in $IMG"
+if [ -z "$IMG_FILE" ]; then
+    XZ_FILE=$(ls "$IMG"/ubuntu-*.img.xz 2>/dev/null | head -1)
+    [ -n "$XZ_FILE" ] || die "No ubuntu-*.img or ubuntu-*.img.xz found in $IMG"
+    echo "Decompressing $(basename "$XZ_FILE")..."
+    xz --decompress --keep "$XZ_FILE"
+    IMG_FILE="${XZ_FILE%.xz}"
+fi
 [ -f "$IMG/rawprogram0.xml" ]       || die "rawprogram0.xml not found in $IMG"
 [ -f "$IMG/rawprogram0_emmc.xml" ]  || die "rawprogram0_emmc.xml not found in $IMG"
 
@@ -82,7 +88,7 @@ echo "--- Flashing Ubuntu OS image ---"
 enter_edl
 
 (cd "$NHLOS" && sudo qdl --storage ufs \
-    partition_ufs/xbl_s_devprg_ns.melf \
+    xbl_s_devprg_ns.melf \
     rawprogram0.xml)
 
 echo "Flash complete."
