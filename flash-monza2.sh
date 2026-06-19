@@ -124,23 +124,57 @@ done
 
 echo "SSH port open."
 
+# After a reflash the board regenerates its SSH host keys, so any cached entry
+# in known_hosts will no longer match. StrictHostKeyChecking=no only auto-accepts
+# brand-new keys, NOT changed ones, so a stale entry makes ssh refuse to connect
+# and the password change silently fails. Drop any stale entry and never persist
+# the new one.
+SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10)
+ssh-keygen -R "$BOARD_IP" >/dev/null 2>&1 || true
+
 # Try new password first (re-flash case: password already set)
-if sshpass -p "$NEW_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+if sshpass -p "$NEW_PASS" ssh "${SSH_OPTS[@]}" \
         ubuntu@"$BOARD_IP" true 2>/dev/null; then
     echo "Password already set to '${NEW_PASS}'. Skipping password change."
 else
     echo "Changing default password..."
-    expect -c "
-        spawn ssh -o StrictHostKeyChecking=no ubuntu@${BOARD_IP}
-        expect \"password:\"
-        send \"${DEFAULT_PASS}\r\"
+    expect <<EXPECT_EOF || die "Failed to change password on ${BOARD_IP}."
+        set timeout 60
+        spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 ubuntu@${BOARD_IP}
+        # Initial login password prompt
         expect {
-            \"Current password:\" { send \"${DEFAULT_PASS}\r\"; exp_continue }
-            \"New password:\"     { send \"${NEW_PASS}\r\";     exp_continue }
-            \"Retype new\"        { send \"${NEW_PASS}\r\";     exp_continue }
-            eof                  {}
+            -re {[Pp]assword:} { send "${DEFAULT_PASS}\r" }
+            timeout { puts "\nEXPECT: timed out waiting for login password prompt"; exit 2 }
+            eof     { puts "\nEXPECT: connection closed before login prompt"; exit 3 }
         }
-    " || die "Failed to change password on ${BOARD_IP}."
+        # Forced password-change dialog (order-independent, loops via exp_continue)
+        expect {
+            -re {[Cc]urrent.*password:}      { send "${DEFAULT_PASS}\r"; exp_continue }
+            -re {Retype new password:}       { send "${NEW_PASS}\r";     exp_continue }
+            -re {[Nn]ew password:}           { send "${NEW_PASS}\r";     exp_continue }
+            -re {updated successfully}       { puts "\nEXPECT: password updated"; exit 0 }
+            -re {password unchanged}         { puts "\nEXPECT: password unchanged"; exit 4 }
+            -re {Authentication token manipulation error} { puts "\nEXPECT: passwd token error"; exit 5 }
+            -re {BAD PASSWORD}               { puts "\nEXPECT: new password rejected as weak"; exit 6 }
+            -re {Permission denied}          { puts "\nEXPECT: authentication failed"; exit 7 }
+            timeout { puts "\nEXPECT: timed out during password change"; exit 2 }
+            eof     { exit 0 }
+        }
+EXPECT_EOF
+    echo "Password change dialog completed."
+
+    # Verify the new password actually works before declaring success.
+    echo "Verifying new password..."
+    verified=0
+    for i in $(seq 1 30); do
+        if sshpass -p "$NEW_PASS" ssh "${SSH_OPTS[@]}" \
+                ubuntu@"$BOARD_IP" true 2>/dev/null; then
+            verified=1
+            break
+        fi
+        sleep 2
+    done
+    [ "$verified" -eq 1 ] || die "Password change did not take effect on ${BOARD_IP}."
     echo "Password changed to '${NEW_PASS}'."
 fi
 
