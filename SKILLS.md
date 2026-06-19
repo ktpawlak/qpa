@@ -2,6 +2,73 @@
 
 All commands are run from the root of this repository (`qrap/`).
 
+## CBD Remote Kernel Build (Hamoa / Resolute)
+
+CBD is the Canonical remote kernel build system for the `resolute` (Ubuntu 26.04)
+series. Builds are triggered by pushing to the `cbd` remote from the kernel tree
+at `~/qualcomm/linux`.
+
+### Build options
+
+Full CBD option list: `ssh cbd help`
+
+```bash
+# Build only the qcom (non-RT) flavour — fast, ~35 min warm cache
+git push cbd -o native
+
+# Build only the qcom-rt (PREEMPT_RT) flavour
+git push cbd -o native -o binary-qcom-rt
+
+# Build ALL flavours (qcom + qcom-rt) — tarball is ~400 MB
+git push cbd -o native -o binary
+```
+
+**Important:** `-o native` alone only builds `qcom`. To get the RT kernel you
+must add `-o binary-qcom-rt` or `-o binary`.
+
+### Build ID format
+
+`kpawlak-resolute-<SHORT_SHA>-<4DIGITS>/arm64`
+
+The ID is printed by the push. Check status:
+
+```bash
+ssh cbd.kernel ls kpawlak-resolute-<ID>          # list files + status
+ssh cbd.kernel ls kpawlak-resolute-<ID>/arm64 | grep -oE "BUILD-OK|BUILD-FAILED|BUILDING|QUEUED"
+```
+
+### Download artifacts
+
+**Must redirect to a file** — the tarball is streamed to stdout:
+
+```bash
+ssh cbd tarball kpawlak-resolute-<ID>/arm64 > tarball.tgz   # ~200 MB (qcom only)
+                                                              # ~400 MB (all flavours)
+ssh cbd log     kpawlak-resolute-<ID>/arm64 > log.txt        # build log
+```
+
+### Install on device (Hamoa, ubuntu@192.168.1.123, password: changeme12)
+
+```bash
+sshpass -p 'changeme12' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    tarball.tgz ubuntu@192.168.1.123:/tmp/
+
+sshpass -p 'changeme12' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    ubuntu@192.168.1.123 '
+  cd /tmp && tar xzf tarball.tgz
+  # Install specific flavour (e.g. RT):
+  sudo dpkg -i arm64/linux-image-*qcom-rt*.deb arm64/linux-modules-*qcom-rt*.deb
+  # Or install all flavours:
+  sudo dpkg -i arm64/linux-image-*.deb arm64/linux-modules-*.deb
+  sudo reboot
+'
+```
+
+`flash-kernel` and GRUB update automatically; wait ~2 min for the board to come
+back, then verify with `uname -r`.
+
+---
+
 ## Flash Hamoa
 
 Flashing is a single-phase process (no CDT step). One EDL cycle flashes the full Ubuntu OS image.
