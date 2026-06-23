@@ -67,6 +67,26 @@ sshpass -p 'changeme12' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/d
 `flash-kernel` and GRUB update automatically; wait ~2 min for the board to come
 back, then verify with `uname -r`.
 
+### Automated push → build → deploy
+
+`cbd-deploy.sh` (in this repo) does the full pipeline in one command:
+
+```bash
+cd ~/qualcomm/linux
+
+# Build qcom (non-RT) and deploy to board
+~/qualcomm/qpa/cbd-deploy.sh
+
+# Build and deploy RT kernel
+~/qualcomm/qpa/cbd-deploy.sh --flavour qcom-rt
+
+# Build all flavours, install only RT
+~/qualcomm/qpa/cbd-deploy.sh --flavour all --install qcom-rt
+
+# Skip push, re-use existing build ID
+~/qualcomm/qpa/cbd-deploy.sh --build-id kpawlak-resolute-<SHA>-<N> --no-reboot
+```
+
 ---
 
 ## Flash Hamoa
@@ -234,3 +254,20 @@ After the password change the session is closed automatically — log in again w
 ```bash
 ssh ubuntu@192.168.1.185   # password: changeme12
 ```
+
+## Board First-Boot Setup (Hamoa)
+
+### Fix WiFi not scanning (regulatory domain)
+
+After a fresh flash the regulatory domain is `country 00` (world roaming),
+which flags all 2.4GHz channels as `PASSIVE-SCAN` and causes `nmcli device
+wifi list` to return empty.
+
+```bash
+# On the board — set country code and make persistent
+echo "options cfg80211 ieee80211_regdom=PL" | sudo tee /etc/modprobe.d/cfg80211.conf
+# Takes effect on next reboot; or immediately:
+sudo nmcli device wifi rescan
+```
+
+Replace `PL` with your country code (GB, DE, US, etc.).
