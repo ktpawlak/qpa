@@ -9,7 +9,6 @@
 # Must be run from the root of the qrap repository.
 
 set -euo pipefail
-set -x
 
 REAL_HOME=$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)
 ALPACA="${REAL_HOME}/qualcomm/carmel-tools/alpaca.py"
