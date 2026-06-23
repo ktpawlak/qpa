@@ -67,17 +67,37 @@ if [ -z "$IMG_FILE" ]; then
     xz --decompress --keep "$XZ_FILE"
     IMG_FILE="${XZ_FILE%.xz}"
 fi
-[ -f "$IMG/rawprogram0.xml" ]       || die "rawprogram0.xml not found in $IMG"
+
+# Detect image layout: new (partition_ufs/) vs legacy (rawprogram0.xml at root).
+if [ -d "$IMG/partition_ufs" ]; then
+    IMG_LAYOUT="new"
+    ls "$IMG"/partition_ufs/rawprogram[0-9].xml >/dev/null 2>&1 \
+        || die "partition_ufs/ found but no rawprogram[0-9].xml inside"
+else
+    IMG_LAYOUT="legacy"
+    [ -f "$IMG/rawprogram0.xml" ] || die "rawprogram0.xml not found in $IMG"
+fi
 
 echo "=== Flash Hamoa ==="
-echo "Image:  $IMG_FILE"
+echo "Image:    $IMG_FILE"
+echo "Layout:   $IMG_LAYOUT"
 echo ""
 
 # --- copy image and XML files into NHLOS dir ---------------------------------
 
 echo "--- Copying image and partition files ---"
-cp "$IMG_FILE"                "$NHLOS"/
-cp "$IMG/rawprogram0.xml"     "$NHLOS"/
+cp "$IMG_FILE" "$NHLOS"/
+
+if [ "$IMG_LAYOUT" = "new" ]; then
+    # New layout: copy the whole partition_ufs/ subdirectory.
+    rm -rf "$NHLOS/partition_ufs"
+    cp -r "$IMG/partition_ufs" "$NHLOS/"
+    # The ubuntu image itself must also live inside partition_ufs/ because
+    # rawprogram XMLs reference it by filename without a path prefix.
+    cp "$IMG_FILE" "$NHLOS/partition_ufs/"
+else
+    cp "$IMG/rawprogram0.xml" "$NHLOS"/
+fi
 
 # --- flash Ubuntu OS image ---------------------------------------------------
 
@@ -85,9 +105,21 @@ echo ""
 echo "--- Flashing Ubuntu OS image ---"
 enter_edl
 
-(cd "$NHLOS" && sudo qdl --storage ufs \
-    xbl_s_devprg_ns.melf \
-    rawprogram0.xml)
+if [ "$IMG_LAYOUT" = "new" ]; then
+    # New layout: flash with partition_ufs/ XMLs.
+    # patch0.xml is intentionally excluded (it modifies partition table and
+    # must NOT be applied when flashing a pre-partitioned UFS image).
+    (cd "$NHLOS" && sudo qdl --storage ufs \
+        xbl_s_devprg_ns.melf \
+        partition_ufs/rawprogram[0-9].xml \
+        partition_ufs/patch[1-9].xml \
+        --include partition_ufs/)
+else
+    # Legacy layout: single rawprogram0.xml at NHLOS root.
+    (cd "$NHLOS" && sudo qdl --storage ufs \
+        xbl_s_devprg_ns.melf \
+        rawprogram0.xml)
+fi
 
 echo "Flash complete."
 

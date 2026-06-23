@@ -129,6 +129,23 @@ cp $IMG/rawprogram0_emmc.xml  boards/hamoa/nhlos/
 
 #### Flash Ubuntu OS image
 
+New layout (image dir contains `partition_ufs/` subdirectory):
+
+```bash
+sudo ~/qualcomm/carmel-tools/alpaca.py off && sleep 2 && sudo ~/qualcomm/carmel-tools/alpaca.py edl
+sleep 3
+cd boards/hamoa/nhlos
+# Note: patch0.xml is intentionally excluded — it modifies the partition table
+# and must NOT be applied when flashing a pre-partitioned UFS image.
+sudo qdl --storage ufs xbl_s_devprg_ns.melf \
+    partition_ufs/rawprogram[0-9].xml \
+    partition_ufs/patch[1-9].xml \
+    --include partition_ufs/
+cd -
+```
+
+Legacy layout (image dir contains only `rawprogram0.xml` at root, e.g. x02/x03):
+
 ```bash
 sudo ~/qualcomm/carmel-tools/alpaca.py off && sleep 2 && sudo ~/qualcomm/carmel-tools/alpaca.py edl
 sleep 3
@@ -136,6 +153,8 @@ cd boards/hamoa/nhlos
 sudo qdl --storage ufs xbl_s_devprg_ns.melf rawprogram0.xml
 cd -
 ```
+
+The automated `flash-hamoa.sh` script detects the layout automatically.
 
 Power cycle for a clean boot:
 
