@@ -8,12 +8,14 @@ This repository (`qrap`) automates flashing Ubuntu images onto Qualcomm developm
 |--------|------------------|----------|
 | Monza2 | Noble (24.04)    | QCS8300  |
 | Hamoa  | Resolute (26.04) | —        |
+| RB8    | Noble (24.04)    | QCS9100  |
 
 ## Repository layout
 
 ```
 qrap/
-  flash-monza2.sh          # automated two-phase flash script
+  flash-monza2.sh          # automated two-phase flash script (Monza2, eMMC)
+  flash-rb8.sh             # automated single-phase flash script (RB8, UFS)
   boards/
     monza2/
       nhlos/               # NHLOS artifacts — gitignored, downloaded separately

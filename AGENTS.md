@@ -8,6 +8,7 @@ The purpose of this project is to facilitate automatic testing of enabled boards
 |--------|------------------|
 | Monza2 | Noble (24.04)    |
 | Hamoa  | Resolute (26.04) |
+| RB8    | Noble (24.04)    |
 
 # Board control
 

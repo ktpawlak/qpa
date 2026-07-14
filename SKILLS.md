@@ -274,6 +274,75 @@ After the password change the session is closed automatically — log in again w
 ssh ubuntu@192.168.1.185   # password: changeme12
 ```
 
+## Flash RB8
+
+RB8 (IQ-9075-EVK, QCS9100) uses **UFS** storage (not eMMC like Monza2) and
+flashing is a **single EDL phase** — there is no separate CDT boot-artifact
+phase.
+
+**Important:** the image directory's `rawprogram0_emmc.xml` / `rawprogram0.xml`
+are Monza2-specific (eMMC layout, wrong sector size/GPT for RB8) and must
+**never** be copied or flashed for RB8. Instead, RB8's own
+`boards/rb8/nhlos/partition_ufs/rawprogram0.xml` (UFS-native, correct 4096-byte
+sector size) is reused, with its embedded `filename="...img"` reference
+rewritten in place to match whichever release is being flashed.
+
+### One-time setup: download NHLOS artifacts
+
+Skip this if `boards/rb8/nhlos/` already contains the artifacts.
+
+```bash
+# Populate boards/rb8/nhlos/ from the QCS9100 NHLOS bins tarball
+tar xf QLI.1.7-Ver.1.1-ubuntu-QCS9100-nhlos-bins.tar.gz \
+    --strip-components=1 -C boards/rb8/nhlos/
+```
+
+### Flash (automated)
+
+```bash
+./flash-rb8.sh ~/qualcomm/images/24.04/x13
+```
+
+The script: symlinks the Ubuntu image in, rewrites the image filename inside
+`partition_ufs/rawprogram0.xml`, enters EDL, flashes (`patch0.xml` excluded —
+it modifies the outer partition table and must not be applied against a
+pre-partitioned image), and power-cycles.
+
+### Manual flash
+
+```bash
+sudo ~/qualcomm/carmel-tools/alpaca.py off && sleep 2 && sudo ~/qualcomm/carmel-tools/alpaca.py edl
+sleep 3
+cd boards/rb8/nhlos
+sudo qdl --storage ufs --include=partition_ufs \
+    prog_firehose_ddr.elf \
+    partition_ufs/rawprogram[0-9].xml \
+    partition_ufs/patch[1-9].xml
+cd -
+```
+
+Power cycle for a clean boot:
+
+```bash
+sudo ~/qualcomm/carmel-tools/alpaca.py off
+sudo ~/qualcomm/carmel-tools/alpaca.py on
+```
+
+### First login: change default password
+
+RB8 gets its IP via DHCP (verify with `nmap -sn 192.168.1.0/24` or check the
+router/`arp`) — it is not a fixed address like Monza2/Hamoa. The
+`flash-rb8.sh` script handles the password change automatically once you've
+confirmed the board's IP; if doing it manually:
+
+```bash
+ssh ubuntu@<board-ip>
+# Password prompt: ubuntu
+# Current password: ubuntu
+# New password: changeme12
+# Retype new password: changeme12
+```
+
 ## Board First-Boot Setup (Hamoa)
 
 ### Fix WiFi not scanning (regulatory domain)
