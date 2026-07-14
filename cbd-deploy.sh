@@ -96,6 +96,26 @@ command -v sshpass >/dev/null || die "sshpass not found (apt install sshpass)"
 [ -n "$(git -C "$KERNEL_DIR" remote get-url cbd 2>/dev/null)" ] || \
     die "'cbd' git remote not configured"
 
+# Board must be reachable *before* we spend time building/downloading —
+# it may simply be powered off (alpaca.py power state isn't tracked here).
+BOARD_HOST="${BOARD#*@}"
+info "Checking board reachability ($BOARD_HOST)..."
+if ! ping -c 1 -W 2 "$BOARD_HOST" >/dev/null 2>&1; then
+    echo "WARNING: $BOARD_HOST does not respond to ping." >&2
+    echo "  If this is Hamoa/RB8, it may be powered off. Try:" >&2
+    echo "    sudo ~/qualcomm/carmel-tools/alpaca.py on" >&2
+    echo "  Waiting up to 3 min for it to come up before giving up..." >&2
+    up=0
+    for _ in $(seq 1 18); do
+        if ping -c 1 -W 2 "$BOARD_HOST" >/dev/null 2>&1; then
+            up=1; break
+        fi
+        sleep 10
+    done
+    [ "$up" -eq 1 ] || die "$BOARD_HOST unreachable — power on the board and retry."
+    info "Board is now reachable."
+fi
+
 # ── Step 1: Push to CBD ───────────────────────────────────────────────────────
 if [ "$DO_PUSH" -eq 1 ]; then
     SHA=$(git -C "$KERNEL_DIR" rev-parse --short=12 HEAD)
@@ -153,6 +173,11 @@ ssh cbd tarball "${BUILD_ID}/arm64" > "$TARBALL"
 TARBALL_SIZE=$(du -sh "$TARBALL" | cut -f1)
 info "Downloaded: $TARBALL_SIZE"
 
+# Expected `uname -r` after install, so we can confirm the reboot actually
+# landed on the new kernel rather than just checking SSH is reachable again.
+EXPECTED_KVER=$(tar -tzf "$TARBALL" | grep -oE 'linux-image-[^_]+_' | head -1 | sed -E 's/^linux-image-//; s/_$//')
+[ -n "$EXPECTED_KVER" ] && info "Expected kernel version after install: $EXPECTED_KVER"
+
 # ── Step 4: SCP to board ──────────────────────────────────────────────────────
 info "Copying tarball to $BOARD:/tmp/ ..."
 scp_board "$TARBALL" "${BOARD}:/tmp/cbd_kernel.tgz"
@@ -167,6 +192,11 @@ case "$INSTALL" in
     all)     DEB_GLOB="arm64/linux-image-*.deb arm64/linux-modules-*.deb" ;;
 esac
 
+# NOTE: dpkg's frontend lock can be held transiently by unattended-upgrades or
+# other apt/dpkg activity on first boot. We wait for it to clear, and — since
+# the install runs through `set -e` in a remote script — check dpkg's actual
+# exit status explicitly (piping through grep would otherwise mask a failure)
+# so we never reboot into an unchanged kernel after a silently-failed install.
 ssh_board "
     set -e
     cd /tmp
@@ -176,25 +206,45 @@ ssh_board "
     cd cbd_kernel_unpack
     echo '--- debs to install ---'
     ls $DEB_GLOB 2>/dev/null || { echo 'No matching debs found!'; exit 1; }
-    sudo dpkg -i $DEB_GLOB 2>&1 | grep -v '^$'
+
+    echo '--- waiting for dpkg lock (up to 60s) ---'
+    for i in \$(seq 1 30); do
+        sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
+        sleep 2
+    done
+
+    echo '--- installing ---'
+    if ! sudo dpkg -i $DEB_GLOB; then
+        echo 'ERROR: dpkg install failed — not rebooting.' >&2
+        exit 1
+    fi
     echo '--- installation complete ---'
     uname -r
-"
+" || die "Kernel install on $BOARD failed — board was NOT rebooted. Check the dpkg output above (lock contention?) and retry."
 
 # ── Step 6: Reboot ────────────────────────────────────────────────────────────
 if [ "$DO_REBOOT" -eq 1 ]; then
     info "Rebooting $BOARD ..."
     ssh_board "sudo reboot" || true
 
+    # NOTE: /tmp on the board does not survive reboot (tmpfs) — the unpacked
+    # debs/tarball will be gone if a re-install is ever needed after this point.
     info "Waiting for board to come back (up to 3 min)..."
     sleep 20
+    BOOTED_KVER=""
     for i in $(seq 1 36); do
-        if ssh_board "echo UP; uname -r; uname -v" 2>/dev/null; then
-            info "Board is back."
-            break
-        fi
+        BOOTED_KVER=$(ssh_board "uname -r" 2>/dev/null) && [ -n "$BOOTED_KVER" ] && break
         sleep 5
     done
+
+    if [ -z "$BOOTED_KVER" ]; then
+        die "Board did not come back within 3 min after reboot."
+    fi
+    info "Board is back, running: $BOOTED_KVER"
+
+    if [ -n "$EXPECTED_KVER" ] && [ "$BOOTED_KVER" != "$EXPECTED_KVER" ]; then
+        die "Board rebooted but is running '$BOOTED_KVER', expected '$EXPECTED_KVER' — install/boot did not take effect (check grub default entry / flash-kernel)."
+    fi
 else
     info "--no-reboot: skipping reboot"
 fi
