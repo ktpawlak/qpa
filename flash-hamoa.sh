@@ -58,6 +58,11 @@ command -v expect >/dev/null        || die "expect not found in PATH (install wi
 command -v sshpass >/dev/null       || die "sshpass not found in PATH (install with: apt install sshpass)"
 [ -f "$NHLOS/xbl_s_devprg_ns.melf" ] \
     || die "NHLOS artifacts missing. Run one-time setup first (see SKILLS.md)."
+[ -d "$NHLOS/partition_spinor" ] \
+    || die "NHLOS artifacts missing partition_spinor/. Run one-time setup first (see SKILLS.md)."
+
+DTB_FILE="$IMG/dtb.bin"
+[ -f "$DTB_FILE" ] || die "dtb.bin not found in image directory: $DTB_FILE"
 
 IMG_FILE=$(ls "$IMG"/ubuntu-*.img 2>/dev/null | head -1)
 if [ -z "$IMG_FILE" ]; then
@@ -88,6 +93,9 @@ echo ""
 echo "--- Copying image and partition files ---"
 cp "$IMG_FILE" "$NHLOS"/
 
+# dtb.bin comes from the image dir and is flashed to spinor (see below).
+cp "$DTB_FILE" "$NHLOS/partition_spinor/"
+
 if [ "$IMG_LAYOUT" = "new" ]; then
     # New layout: copy the whole partition_ufs/ subdirectory.
     rm -rf "$NHLOS/partition_ufs"
@@ -98,6 +106,18 @@ if [ "$IMG_LAYOUT" = "new" ]; then
 else
     cp "$IMG/rawprogram0.xml" "$NHLOS"/
 fi
+
+# --- flash dtb to spinor -----------------------------------------------------
+
+echo ""
+echo "--- Flashing dtb.bin to spinor ---"
+enter_edl
+(cd "$NHLOS" && sudo qdl --storage spinor \
+    xbl_s_devprg_ns.melf \
+    partition_spinor/rawprogram0.xml \
+    partition_spinor/patch0.xml \
+    --include=partition_spinor)
+echo "Spinor flash complete."
 
 # --- flash Ubuntu OS image ---------------------------------------------------
 
@@ -161,29 +181,54 @@ if sshpass -p "$NEW_PASS" ssh "${SSH_OPTS[@]}" \
     echo "Password already set to '${NEW_PASS}'. Skipping password change."
 else
     echo "Changing default password..."
-    expect <<EXPECT_EOF || die "Failed to change password on ${BOARD_IP}."
-        set timeout 60
-        spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 ubuntu@${BOARD_IP}
-        # Initial login password prompt
-        expect {
-            -re {[Pp]assword:} { send "${DEFAULT_PASS}\r" }
-            timeout { puts "\nEXPECT: timed out waiting for login password prompt"; exit 2 }
-            eof     { puts "\nEXPECT: connection closed before login prompt"; exit 3 }
-        }
-        # Forced password-change dialog (order-independent, loops via exp_continue)
-        expect {
-            -re {[Cc]urrent.*password:}      { send "${DEFAULT_PASS}\r"; exp_continue }
-            -re {Retype new password:}       { send "${NEW_PASS}\r";     exp_continue }
-            -re {[Nn]ew password:}           { send "${NEW_PASS}\r";     exp_continue }
-            -re {updated successfully}       { puts "\nEXPECT: password updated"; exit 0 }
-            -re {password unchanged}         { puts "\nEXPECT: password unchanged"; exit 4 }
-            -re {Authentication token manipulation error} { puts "\nEXPECT: passwd token error"; exit 5 }
-            -re {BAD PASSWORD}               { puts "\nEXPECT: new password rejected as weak"; exit 6 }
-            -re {Permission denied}          { puts "\nEXPECT: authentication failed"; exit 7 }
-            timeout { puts "\nEXPECT: timed out during password change"; exit 2 }
-            eof     { exit 0 }
-        }
+    # The board often accepts SSH connections before multi-user boot completes.
+    # During that window pam_nologin refuses unprivileged logins with
+    # "System is booting up. Unprivileged users are not permitted to log in yet"
+    # and closes the session, which would otherwise look like a silent stall.
+    # Retry (exit code 8) until the system finishes booting.
+    NOLOGIN_RETRIES=30
+    NOLOGIN_WAIT=10
+    pw_changed=0
+    for attempt in $(seq 1 $NOLOGIN_RETRIES); do
+        set +e
+        expect <<EXPECT_EOF
+            set timeout 60
+            spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 ubuntu@${BOARD_IP}
+            # Initial login password prompt
+            expect {
+                -re {not permitted to log in yet} { puts "\nEXPECT: system still booting (pam_nologin)"; exit 8 }
+                -re {[Pp]assword:} { send "${DEFAULT_PASS}\r" }
+                timeout { puts "\nEXPECT: timed out waiting for login password prompt"; exit 2 }
+                eof     { puts "\nEXPECT: connection closed before login prompt"; exit 3 }
+            }
+            # Forced password-change dialog (order-independent, loops via exp_continue)
+            expect {
+                -re {not permitted to log in yet} { puts "\nEXPECT: system still booting (pam_nologin)"; exit 8 }
+                -re {[Cc]urrent.*password:}      { send "${DEFAULT_PASS}\r"; exp_continue }
+                -re {Retype new password:}       { send "${NEW_PASS}\r";     exp_continue }
+                -re {[Nn]ew password:}           { send "${NEW_PASS}\r";     exp_continue }
+                -re {updated successfully}       { puts "\nEXPECT: password updated"; exit 0 }
+                -re {password unchanged}         { puts "\nEXPECT: password unchanged"; exit 4 }
+                -re {Authentication token manipulation error} { puts "\nEXPECT: passwd token error"; exit 5 }
+                -re {BAD PASSWORD}               { puts "\nEXPECT: new password rejected as weak"; exit 6 }
+                -re {Permission denied}          { puts "\nEXPECT: authentication failed"; exit 7 }
+                timeout { puts "\nEXPECT: timed out during password change"; exit 2 }
+                eof     { exit 0 }
+            }
 EXPECT_EOF
+        rc=$?
+        set -e
+        if [ "$rc" -eq 8 ]; then
+            echo "System still booting (pam_nologin); retrying in ${NOLOGIN_WAIT}s... (attempt ${attempt}/${NOLOGIN_RETRIES})"
+            sleep "$NOLOGIN_WAIT"
+            continue
+        fi
+        [ "$rc" -eq 0 ] || die "Failed to change password on ${BOARD_IP} (expect exit ${rc})."
+        pw_changed=1
+        break
+    done
+    [ "$pw_changed" -eq 1 ] \
+        || die "System on ${BOARD_IP} never finished booting (pam_nologin still active after $((NOLOGIN_RETRIES * NOLOGIN_WAIT))s)."
     echo "Password change dialog completed."
 
     # Verify the new password actually works before declaring success.

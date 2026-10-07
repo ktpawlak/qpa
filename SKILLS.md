@@ -6,7 +6,7 @@ All commands are run from the root of this repository (`qrap/`).
 
 CBD is the Canonical remote kernel build system for the `resolute` (Ubuntu 26.04)
 series. Builds are triggered by pushing to the `cbd` remote from the kernel tree
-at `~/qualcomm/linux`.
+at `~/qualcomm/resolute/linux-qcom/linux-main`.
 
 ### Build options
 
@@ -72,7 +72,7 @@ back, then verify with `uname -r`.
 `cbd-deploy.sh` (in this repo) does the full pipeline in one command:
 
 ```bash
-cd ~/qualcomm/linux
+cd ~/qualcomm/resolute/linux-qcom/linux-main
 
 # Build qcom (non-RT) and deploy to board
 ~/qualcomm/qpa/cbd-deploy.sh

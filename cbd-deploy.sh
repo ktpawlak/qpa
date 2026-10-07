@@ -2,7 +2,7 @@
 # cbd-deploy.sh — Push the kernel tree to CBD, wait for the build to complete,
 # download the artifacts, and install them on the target board.
 #
-# Run from the kernel tree root (~/qualcomm/linux).
+# Run from the kernel tree root (~/qualcomm/resolute/linux-qcom/linux-main).
 #
 # Usage:
 #   ./cbd-deploy.sh [options]
